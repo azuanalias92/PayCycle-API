@@ -101,7 +101,6 @@ class ApiError extends Error {
 const commitmentStatuses: CommitmentStatus[] = ['pending', 'completed', 'cancelled', 'overdue'];
 const paymentStatuses: PaymentStatus[] = ['pending', 'completed', 'failed', 'refunded'];
 const paymentMethods: PaymentMethod[] = ['cash', 'card', 'bank_transfer', 'digital_wallet'];
-const allowedAppRedirectUris = new Set(['paycycle://auth/callback']);
 type AppEnv = { Bindings: Bindings; Variables: Variables };
 type AppContext = Context<AppEnv>;
 
@@ -586,16 +585,36 @@ function ensureGoogleConfig(env: Bindings) {
   }
 }
 
+const allowedAppRedirectUris = new Set(['paycycle://auth/callback']);
+
+/**
+ * The web app's redirect URI is dynamic (uses window.location.origin).
+ * Accept any HTTPS URL ending with /auth/callback from allowed origins.
+ */
 function normalizeAppRedirectUri(value: string | undefined) {
   if (!value) {
     return null;
   }
 
-  if (!allowedAppRedirectUris.has(value)) {
-    throw new ApiError(400, 'Unsupported app redirect URI');
+  // Direct match for known app URIs
+  if (allowedAppRedirectUris.has(value)) {
+    return value;
   }
 
-  return value;
+  // Accept HTTPS URLs ending with /auth/callback
+  try {
+    const parsed = new URL(value);
+    if (
+      parsed.protocol === 'https:' &&
+      parsed.pathname.endsWith('/auth/callback')
+    ) {
+      return value;
+    }
+  } catch {
+    // not a valid URL, fall through to error
+  }
+
+  throw new ApiError(400, 'Unsupported app redirect URI');
 }
 
 function getGoogleRedirectUri(c: AppContext) {
